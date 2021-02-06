@@ -19,7 +19,7 @@ target_link_libraries(leakcheck
     leakcheck_static
     dl)
 
-install(TARGETS leakcheck LIBRARY)
+install(TARGETS leakcheck LIBRARY DESTINATION lib)
 install(FILES leakcheck DESTINATION bin)
 
 add_executable(test_no_alloc test/test_no_alloc.c)
