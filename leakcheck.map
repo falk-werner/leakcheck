@@ -1,0 +1,9 @@
+{
+    global:
+        malloc;
+        calloc;
+        realloc;
+        free;
+    local:
+        *;
+};

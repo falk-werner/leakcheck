@@ -1,0 +1,23 @@
+#!/bin/bash
+
+
+if [ "$1" == "" ]; then
+    echo "need command"
+    exit 1
+fi
+
+LEAKCHECK=$(realpath libleakcheck.so)
+
+if [ "$LD_PRELOAD" ]; then
+    LD_PRELOAD="$LEAKCHECK:$LD_PRELOAD"
+else
+    LD_PRELOAD="$LEAKCHECK"
+fi
+export LD_PRELOAD
+
+"$@"
+EXIT_CODE="$?"
+
+unset LD_PRELOAD
+
+exit $EXIT_CODE
