@@ -60,7 +60,7 @@ static void get_commandline(char * buffer, size_t buffer_size)
     }
 }
 
-static void cleanup() __attribute__((constructor));
+static void cleanup() __attribute__((destructor));
 static void cleanup(void)
 {
     char cmdline[80];
