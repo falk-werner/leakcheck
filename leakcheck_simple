@@ -7,7 +7,7 @@ if [ "$1" == "" ]; then
 fi
 
 LEAKCHECK=""
-SEARCH_PATH=". /usr/bin /usr/local/bin"
+SEARCH_PATH=". /usr/lib /usr/local/lib"
 for path in ${SEARCH_PATH}; do
     if [ -f "${path}/libleakcheck_simple.so" ]; then
         LEAKCHECK=$(realpath ${path}/libleakcheck_simple.so)
