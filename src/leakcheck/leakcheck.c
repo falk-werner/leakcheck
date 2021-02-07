@@ -62,17 +62,41 @@ static void * get_symbol(char const * symbol_name)
     return symbol;
 }
 
+static void get_commandline(char * buffer, size_t buffer_size)
+{
+    if (0 == buffer_size) { return; }
+
+    FILE * file = fopen("/proc/self/cmdline", "rb");
+    if (NULL != file)
+    {
+        size_t length = fread(buffer, 1 , buffer_size - 1, file);
+        for (size_t i = 0; i < length; i++)
+        {
+            if ('\0' == buffer[i])
+            {
+                buffer[i] = ' ';
+            }
+        }
+        buffer[length] = '\0';
+        fclose(file);
+    }
+}
+
 static void cleanup(void)
 {
+    char cmdline[80];
+    get_commandline(cmdline, 80);
+
     char buffer[1024];
     int len = snprintf(buffer, 1024, 
         "\n"
-        "=== Leakcheck ===\n"
+        "=== Leakcheck (%s) ===\n"
         "In use at exit:\n"
         "\tblocks : %zu\n"
         "\tsize   : %zu\n"
         "total allocated blocks: %zu\n"
         "total allocated size  : %zu\n",
+    cmdline,
      alloc_count, alloc_size, 
      malloc_count + calloc_count,
      alloc_size_total);
