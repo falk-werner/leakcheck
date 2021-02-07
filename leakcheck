@@ -6,7 +6,20 @@ if [ "$1" == "" ]; then
     exit 1
 fi
 
-LEAKCHECK=$(realpath libleakcheck.so)
+LEAKCHECK=""
+SEARCH_PATH=". /usr/bin /usr/local/bin"
+for path in ${SEARCH_PATH}; do
+    if [ -f "${path}/libleakcheck.so" ]; then
+        LEAKCHECK=$(realpath ${path}/libleakcheck.so)
+        break
+    fi
+done
+
+if [ "" == "${LEAKCHECK}" ]; then
+    echo "error: libleakcheck.so not found: checked ${SEARCH_PATH}" 1>&2
+    exit 1
+fi
+
 
 if [ "$LD_PRELOAD" ]; then
     LD_PRELOAD="$LEAKCHECK:$LD_PRELOAD"
