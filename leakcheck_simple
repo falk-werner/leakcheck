@@ -1,0 +1,36 @@
+#!/bin/bash
+
+
+if [ "$1" == "" ]; then
+    echo "need command"
+    exit 1
+fi
+
+LEAKCHECK=""
+SEARCH_PATH=". /usr/bin /usr/local/bin"
+for path in ${SEARCH_PATH}; do
+    if [ -f "${path}/libleakcheck_simple.so" ]; then
+        LEAKCHECK=$(realpath ${path}/libleakcheck_simple.so)
+        break
+    fi
+done
+
+if [ "" == "${LEAKCHECK}" ]; then
+    echo "error: libleakcheck_simple.so not found: checked ${SEARCH_PATH}" 1>&2
+    exit 1
+fi
+
+
+if [ "$LD_PRELOAD" ]; then
+    LD_PRELOAD="$LEAKCHECK:$LD_PRELOAD"
+else
+    LD_PRELOAD="$LEAKCHECK"
+fi
+export LD_PRELOAD
+
+"$@"
+EXIT_CODE="$?"
+
+unset LD_PRELOAD
+
+exit $EXIT_CODE

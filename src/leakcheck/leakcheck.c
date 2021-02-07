@@ -5,7 +5,6 @@
 #include <unistd.h>
 #include <dlfcn.h>
 #include <strings.h>
-#include <execinfo.h>
 #include <pthread.h>
 
 #include <stdio.h>
@@ -19,25 +18,20 @@
 
 typedef void * malloc_fn(size_t);
 typedef void free_fn(void *);
-typedef int backtrace_fn(void **, int);
 
 struct block_info
 {
     uint64_t magic;    
     size_t size;
 
-    void * stack_trace[STACK_TRACE_SIZE];
-    int stack_trace_items;
+    void * caller;
 
     struct block_info * next;
     struct block_info * prev;
 };
 
 static void * early_malloc(size_t);
-static int early_backtrace(void * * buffer, int);
 
-static size_t ignored_count = 0;
-static size_t ignored_size = 0;
 static size_t alloc_count = 0;
 static size_t alloc_size = 0;
 static size_t alloc_size_total = 0;
@@ -46,7 +40,6 @@ static size_t calloc_count = 0;
 
 static malloc_fn * real_malloc = &early_malloc;
 static free_fn * real_free = NULL;
-static backtrace_fn * real_backtrace = &early_backtrace;
 
 static struct block_info blocks = 
 {
@@ -77,16 +70,15 @@ static void cleanup(void)
         "=== Leakcheck ===\n"
         "In use at exit:\n"
         "\tblocks : %zu\n"
-        "\tignored: %zu\n"
         "\tsize   : %zu\n"
         "total allocated blocks: %zu\n"
         "total allocated size  : %zu\n",
-     alloc_count - ignored_count, ignored_count, alloc_size - ignored_size, 
-     malloc_count + calloc_count - ignored_count,
+     alloc_count, alloc_size, 
+     malloc_count + calloc_count,
      alloc_size_total);
     write(STDERR_FILENO, buffer, len);
 
-    if (0 < (alloc_count - ignored_count))
+    if (0 < alloc_count)
     {
         len = snprintf(buffer, 1024, "\n=== Available Blocks ===\n");
         write(STDERR_FILENO, buffer, len);
@@ -94,15 +86,8 @@ static void cleanup(void)
         struct block_info * current = blocks.next;
         while (current != &blocks)
         {
-            if (0 < current->stack_trace_items)
-            {
-                len = snprintf(buffer, 1024, "\nblock size: %zu\n", current->size);
-                write(STDERR_FILENO, buffer, len);
-                if (0 < current->stack_trace_items)
-                {
-                    backtrace_symbols_fd(current->stack_trace, current->stack_trace_items, STDERR_FILENO);
-                }
-            }
+            len = snprintf(buffer, 1024, "%zu bytes allocated by %p\n", current->size, current->caller);
+            write(STDERR_FILENO, buffer, len);
             current = current->next;
         }
     }
@@ -124,10 +109,6 @@ static void init(void)
         g_state = initializing;
         real_malloc = get_symbol("malloc");
         real_free = get_symbol("free");
-
-        void * dummy;
-        backtrace(&dummy, 1);
-        real_backtrace = get_symbol("backtrace");
 
         atexit(cleanup);
         g_state = initialized;
@@ -178,14 +159,7 @@ void * early_malloc(size_t size)
     return result;
 }
 
-static int early_backtrace(void * * buffer, int size)
-{
-    (void) buffer;
-    (void) size;
-    return 0;
-}
-
-void * leakcheck_malloc(size_t size)
+void * leakcheck_malloc(size_t size, void * caller)
 {
     init();
 
@@ -198,15 +172,9 @@ void * leakcheck_malloc(size_t size)
         struct block_info * info = ptr;
         info->magic = MAGIC;
         info->size = size;
-        info->stack_trace_items = real_backtrace(info->stack_trace, STACK_TRACE_SIZE);
+        info->caller = caller;
         add_block(info);
         result = ( ((char*) ptr) + sizeof(struct block_info) );
-
-        if (0 == info->stack_trace_items)
-        {
-            ignored_count++;
-            ignored_size += size;
-        }
 
         alloc_count++;
         alloc_size += size;
@@ -217,7 +185,7 @@ void * leakcheck_malloc(size_t size)
     return result;
 }
 
-void * leakcheck_calloc(size_t count, size_t size)
+void * leakcheck_calloc(size_t count, size_t size, void * caller)
 {
     init();
     if ((0 == count) || (0 == size)) { return NULL; }
@@ -229,16 +197,10 @@ void * leakcheck_calloc(size_t count, size_t size)
         struct block_info * info = ptr;
         info->magic = MAGIC;
         info->size = (count * size);
-        info->stack_trace_items = real_backtrace(info->stack_trace, STACK_TRACE_SIZE);
+        info->caller = caller;
         add_block(info);
         result = ( ((char*) ptr) + sizeof(struct block_info) );
         bzero(result, info->size);
-
-        if (0 == info->stack_trace_items)
-        {
-            ignored_count++;
-            ignored_size += (count * size);
-        }
 
         alloc_count++;
         alloc_size += (count * size);
@@ -249,7 +211,7 @@ void * leakcheck_calloc(size_t count, size_t size)
     return result;
 }
 
-void * leakcheck_realloc(void *ptr, size_t size)
+void * leakcheck_realloc(void *ptr, size_t size, void * caller)
 {
     init();
     if ((NULL == ptr) && (0 == size))
@@ -258,11 +220,11 @@ void * leakcheck_realloc(void *ptr, size_t size)
     }
     else if (NULL == ptr)
     {
-        return malloc(size);
+        return leakcheck_malloc(size, caller);
     }
     else if (0 == size)
     {  
-        free(ptr);
+        leakcheck_free(ptr, caller);
         return NULL;
     }
     else
@@ -273,11 +235,11 @@ void * leakcheck_realloc(void *ptr, size_t size)
 
         if (old_size < size)
         {
-            result = malloc(size);
+            result = leakcheck_malloc(size, caller);
             if (NULL != result)
             {
                 memcpy(result, ptr, old_size);
-                free(ptr);
+                leakcheck_free(ptr, caller);
             }
         }
 
@@ -286,7 +248,7 @@ void * leakcheck_realloc(void *ptr, size_t size)
     
 }
 
-void leakcheck_free(void * ptr)
+void leakcheck_free(void * ptr, void * caller)
 {
     if (NULL == ptr) { return; }
 
@@ -310,9 +272,6 @@ void leakcheck_free(void * ptr)
     }
     else
     {
-        fprintf(stderr, "error: bad free %p\n", ptr);
-        void * buffer[5];
-        int len = backtrace(buffer, 5);
-        backtrace_symbols_fd(buffer, len, STDERR_FILENO);
+        fprintf(stderr, "error: bad free %p called by %p\n", ptr, caller);
     }
 }
