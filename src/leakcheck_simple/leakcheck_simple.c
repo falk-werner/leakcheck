@@ -60,6 +60,7 @@ static void get_commandline(char * buffer, size_t buffer_size)
     }
 }
 
+static void cleanup() __attribute__((constructor));
 static void cleanup(void)
 {
     char cmdline[80];
@@ -94,7 +95,7 @@ static void init(void)
         real_free = get_symbol("free");
         real_realloc = get_symbol("realloc");
 
-        atexit(cleanup);
+        //atexit(cleanup);
         g_state = initialized;
 
     }
