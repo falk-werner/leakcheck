@@ -184,8 +184,9 @@ void leakcheck_simple_free(void * ptr)
     else
     {
         real_free(ptr);
-        pthread_mutex_lock(&stats_mutex);
-        alloc_count--;
-        pthread_mutex_unlock(&stats_mutex);
     }
+
+    pthread_mutex_lock(&stats_mutex);
+    alloc_count--;
+    pthread_mutex_unlock(&stats_mutex);
 }
